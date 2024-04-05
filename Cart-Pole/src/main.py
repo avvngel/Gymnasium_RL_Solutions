@@ -8,17 +8,37 @@ from policy import *
 from utils import *
 from itertools import product
 import time
+from log_controller import *
 
-def opp_action(action):
-    if action == 1:
-        return 0
-    elif action == 0:
-        return 1
+# Accept command line arguments
+parser = argparse.ArgumentParser(prog='CartPole', 
+                                description='Process some integers.')
+parser.add_argument('--N', type=int, default = 2,
+                    help="Number of discretization points (default: 2)")
+parser.add_argument('--n_epochs', type=int, default=1,
+                    help='Number of training epochs (default: 1)')
+parser.add_argument('--demonstrate', type=int, default=0,
+                    help='If set to 1, will render a pyGame demsonstration')
+parser.add_argument('--epsilon', type=float, default=0,
+                    help='If >0, uses as the epsilon for epsilon greedy exploration')
+parser.add_argument('--gamma', type=float, default=.8,
+                    help='Sets discount factor for reward calculation in policy evaluation')
+parser.add_argument('--epsilon_decay_rate', type=float, default=.02,
+                    help='Sets the decay rate per epoch of epsilon used in epsilon-greedy exploration.')
+
+args = parser.parse_args()
+
+# Create a logger for controlling output verbosity
+logger = Logger()
+logger.set_verbosity(1)
 
 ###################### Set up environment ######################
 
 # Create gym environment
 env = gym.make('CartPole-v1')#, render_mode = 'human')
+
+logger("Discretizing environment...", msg_verbosity = 1, end = '')
+tic = time.time()
 
 # Retrive environment bounds and episode termination bounds
 global_bounds = np.concatenate([env.observation_space.low,
@@ -26,15 +46,16 @@ global_bounds = np.concatenate([env.observation_space.low,
 episode_bounds = global_bounds/2
 
 # Discretize state variables
-N = 2 # Discretization points in termination window
+N = args.N # Discretization points in termination window
 n_state_vars = env.observation_space.shape[0]
 discretized_state_vars = []
 
 for state_var_idx in range(n_state_vars):
 
-        # Get episode termination bounds
+    # Get episode termination bounds
     lb = episode_bounds[:, state_var_idx][0]
     ub = episode_bounds[:, state_var_idx][1]
+
 
     # Set bound based for infinite termination windows
     if is_unbounded([lb, ub]):
@@ -56,139 +77,248 @@ for state_var_idx in range(n_state_vars):
 
 # Discretize states
 discretized_states = list(product(*discretized_state_vars))
-print("-------disc states----------")
-print(len(discretized_states))
+
+toc = time.time()
+logger(f"{toc - tic:.3f}s", msg_verbosity = 1)
 
 # Write function mapping states to available actions
 def available_actions(state):
+    """
+    Returns the available actions for the provided state according to 
+    the Gymnasium Cart-Pole v2 specifications.
+    """
     # From gym Documentation:
     # 0: Push cart to the left
     # 1: Push cart to the right
     return [0, 1]
 
+logger("Initializing EnvModel...", msg_verbosity = 1, end = '')
+tic = time.time()
+
 # Create discretized environment model
 env_model = EnvModel(discretized_states, available_actions)
+
+toc = time.time()
+logger(f"{toc - tic:.3f}s", msg_verbosity = 1)
 
 # Cache number of states for later
 n_states = len(env_model.states)
 
+logger("Initializing policy...", msg_verbosity = 1, end = '')
+tic = time.time()
+
 # Generate random policy to start
-pi = get_random_policy(env_model)
+pi = get_random_policy(env_model, dist = 'discrete', extra_param = [.5, .5])
 
-##################### Explore Environment #####################
+toc = time.time()
+logger(f"{toc - tic:.3f}s", msg_verbosity = 1)
 
-# Loop params
+############################## Policy Iteration ###############################
+
+# Exploration loop params
 n_episodes = 1000
 max_time_steps = 500
+epsilon = args.epsilon # Percentage of time to go against greedy policy
+epsilon_decay_rate = args.epsilon_decay_rate
 fps = 30 # render frames per second
 
-for episode in range(n_episodes):
-    env_state = env.reset()[0]
-    #env.render()
-    for t in range(max_time_steps):
-        model_state = get_discretized_state(env_state, discretized_state_vars)
-        action = select_action(env_model, model_state, pi)
-        next_env_state, reward, terminated, truncated, info = env.step(action)
-        next_model_state = get_discretized_state(env_state, discretized_state_vars)
-
-#        time.sleep(1/fps)
-        if truncated or terminated:
-            reward = 0
-            env_model.update_transitions([[model_state, action, next_model_state, reward]])
- #           time.sleep(1/fps)
-            break
-
-        env_model.update_transitions([[model_state, action, next_model_state, reward]])
-
-
-#env.close()
-
-######################## Policy Iteration #####################
+# Policy iteration loop params
+max_Iters = 10
+n_epochs = args.n_epochs
+gamma = args.gamma
 
 # Initizlize state-value function to 0
 V_k = torch.zeros((n_states, 1))
-max_Iters = 3
-epochs = 5
-print("k=0")
-print(V_k.count_nonzero())
-for j in range(epochs):
-    print(f"#################### EPOCH {j} #########################")
-    # ---------------------Explore environment---------------------
-    # Loop params
-    n_episodes = 1000
-    max_time_steps = 500
-    fps = 30 # render frames per second
+
+logger("Beginning training loop...", msg_verbosity = 1)
+total_time_tic = time.time()
+logger("k=0")
+
+# Training Loop
+for j in range(n_epochs):
+
+    logger(f"#################### EPOCH {j+1} #########################", msg_verbosity = 1)
+    epoch_tic = time.time()
+
+    # Decay epsilon as epochs go on
+    epsilon = max(.02, epsilon - j*epsilon_decay_rate)
+
+    # ********************* Explore environment **********************
+    # Exploration loop
+    logger("Exploring environment...", msg_verbosity = 1)
+    exploration_tic = time.time()
+    episode_rewards = np.zeros(n_episodes)
 
     for episode in range(n_episodes):
+
+        logger('')
+        logger('')
+        logger(f"#************************* EPISODE {episode + 1} ******************************#")
+
+        # Reset environment to initial state
         env_state = env.reset()[0]
-        #env.render()
+
         for t in range(max_time_steps):
+
+            # Convert continuous environment state into discrete model state
             model_state = get_discretized_state(env_state, discretized_state_vars)
-            action = select_action(env_model, model_state, pi)
-            next_env_state, reward, terminated, truncated, info = env.step(action)
+
+            # Select action based on policy
+            action = select_action(env_model, model_state, pi, epsilon = epsilon)
+
+            # Execute action and record environment reaction
+            env_state, reward, terminated, truncated, info = env.step(action)
+
+            # Convert continuous next environment state in to discrete next model state
             next_model_state = get_discretized_state(env_state, discretized_state_vars)
-
-    #        time.sleep(1/fps)
+            
+            # Debugging output
+            logger(f"Discretized State: {env_model.encoder.encode_state(model_state)}")
+            logger(f"Action taken: {action}")
+            logger(f"Discretized Next State: {env_model.encoder.encode_state(next_model_state)}")
+            
+            # Check for episode termination or truncation
             if truncated or terminated:
-                reward = -50
+
+                reward = -2
                 env_model.update_transitions([[model_state, action, next_model_state, reward]])
-     #           time.sleep(1/fps)
                 break
+            
+            # record_rewards
+            episode_rewards[episode] += 1
 
+            # Update transition probabilities and expected rewards
             env_model.update_transitions([[model_state, action, next_model_state, reward]])
+            
+            # Debuging output
+            state_idx = env_model.encoder.encode_state(model_state)
+            next_state_idx = env_model.encoder.encode_state(next_model_state)
+            action_idx = env_model.encoder.encode_action(action)
+            logger(f"Discretized State: {state_idx}")
+            logger(f"Action taken: {action}")
+            logger(f"Discretized Next State: {next_state_idx}")
+            logger(f"Probability: {env_model.dynamic_transitions['probability'][state_idx][action_idx, next_state_idx]}")
+            logger(f"Reward as indexed: {env_model.dynamic_transitions['rewards'][state_idx][action_idx, next_state_idx]}")
+            logger(f"Reward as inserted: {reward}")
+    
+    exploration_toc = time.time()
+    logger(f"Exploration time: {exploration_toc - exploration_tic:.3f}s", msg_verbosity = 1)
 
+    if j > 0 and (j+2) % 2 == 0:
+        print(f"Average reward: {episode_rewards.mean()}")       
+    # *********************** Policy Iteration ***********************
+    logger("Beginning policy iteration...", msg_verbosity = 1)
+    policy_iteration_tic = time.time()
 
-    # --------------------- Policy Iteration ----------------------
     for i in range(max_Iters):
-        # Get state-value function for policy
-        print("Beginning Policy Evaluation")
-        tic = time.time()
-        V_k = iterative_evaluation(V_k, pi, env_model, gamma = .8)
-        toc = time.time()
-        print(f"k = {i+1}")
+        
+        # Display policy iteration #
+        logger(f"k = {i+1}", msg_verbosity = 1)
+
+        # ---------- Policy Evaluation -----------
+        logger("Policy Evaluation: ", msg_verbosity = 1, end = '')
+        
+        # Get state-value function for policy and time execution
+        policy_eval_tic = time.time()
+        V_k = iterative_evaluation(V_k, pi, env_model, gamma = gamma)
+        policy_eval_toc = time.time()
+        
+        # Display nonzero elements of policy
         non_zero_indices = V_k.nonzero()
-        print(V_k[non_zero_indices[:,0], non_zero_indices[:,1]])
+        logger(V_k[non_zero_indices[:,0], non_zero_indices[:,1]])
+        logger(f"{policy_eval_toc - policy_eval_tic:.3f}s", msg_verbosity = 1)
 
-        print(f"Policy Evaluation: {toc - tic}s")
+        # ---------- Policy Improvement ----------
+        logger("Policy Improvement: ", msg_verbosity = 1, end = '')
+        improve_policy_tic = time.time()
 
-        # Policy Improvement
-        old_pi = pi
-        print("Beginning Policy Improvement")
-        tic = time.time()
+        # Cache old policy
+        old_pi = pi.clone()
+
+        # Get policy that's greedy to V_k
         pi = improve_policy(pi, env_model, V_k, gamma = .99)
-        toc = time.time()
+        improve_policy_toc = time.time()
 
-        print(f"Policy Improvement: {toc - tic}s")
-        #if torch.all(torch.isclose(old_pi, pi, rtol = 1e-7, atol = 1e-9)):
-         #   break
+        # Display execution time
+        logger(f"{improve_policy_toc - improve_policy_tic:.3f}s", msg_verbosity = 1)
 
-################### Try out new policy ##################
-env = gym.make('CartPole-v1', render_mode = 'human')
+        # Exit criterion
+        if torch.all(torch.isclose(old_pi, pi, rtol = 1e-7, atol = 1e-9)):
+            policy_iteration_toc = time.time()
+            logger(f"Policy iteration terminated in {i+1} iters and {policy_iteration_toc - policy_iteration_tic:.3f}s.", msg_verbosity = 1)
+            break
+    epoch_toc = time.time()
+    logger(f"Epoch {j+1} time: {epoch_toc - epoch_tic:.3f}s", msg_verbosity = 1)
+
+total_time_toc = time.time()
+logger(f"Training finished in {total_time_toc - total_time_tic:.3f}s", msg_verbosity = 1)
+
+# Save new policy
+policy_name = f"CartPole_policy_N_{N}_{n_epochs}_epochs_{args.epsilon}_epsilon_{args.gamma}_gamma_{args.epsilon_decay_rate}_decay_rate.pt"
+torch.save(pi, policy_name)
+
+# Display non-zero policy entries
+logger("------------- Policy -------------")
+non_zero_indices = pi.nonzero()
+logger(pi[non_zero_indices[:,0], :])
+logger(env_model.encoder.action_encoding)
+
+######################## Launch Policy Demonstration ###########################
+
+# Create new environment
+if args.demonstrate:
+    env = gym.make('CartPole-v1', render_mode = 'human')
+
+else:
+    env = gym.make('CartPole-v1')
+
 
 # Loop params
-n_episodes = 1000
+n_episodes = 100
 max_time_steps = 500
 fps = 30 # render frames per second
 
-print("------------- Policy -------------")
-#print(pi[997])
-#print(list(env_model.dynamic_transitions.keys())[997])
+# Pre-allocate reward tally for computing average reward per episode
+reward_tally = np.zeros(n_episodes)
 
+# Demonstration loop
 for episode in range(n_episodes):
+
+    # Reset environment to initial state
     env_state = env.reset()[0]
-    env.render()
+    
+    if args.demonstrate:
+        # Render Pygame animation
+        env.render()
+
     for t in range(max_time_steps):
+
+        # Convert continuous environment state into discrete model state 
         model_state = get_discretized_state(env_state, discretized_state_vars)
+
+        # Select action according to policy
         action = select_action(env_model, model_state, pi)
-        next_env_state, reward, terminated, truncated, info = env.step(action)
+
+        # Execute action and record environment reaction
+        env_state, reward, terminated, truncated, info = env.step(action)
+
+        # Convert continuous next environment state in to discrete next model state
         next_model_state = get_discretized_state(env_state, discretized_state_vars)
 
+        # Record reward
+        reward_tally[episode] += reward
+
+        # Sleep to smoothen out animation
         time.sleep(1/fps)
+        
+        # Check exit criterion
         if truncated or terminated:
+
             reward = 0
             env_model.update_transitions([[model_state, action, next_model_state, reward]])
-            time.sleep(1/fps)
             break
-
+        
         env_model.update_transitions([[model_state, action, next_model_state, reward]])
+
+print(f"Average reward: {reward_tally.mean()}")
 

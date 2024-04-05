@@ -1,0 +1,169 @@
+Discretizing environment...0.002s
+Initializing EnvModel...0.293s
+Initializing policy...0.043s
+Beginning training loop...
+#################### EPOCH 1 #########################
+Exploring environment...
+Exploration time: 174.743s
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.815s
+Policy Improvement: 35.333s
+k = 2
+Policy Evaluation: 1.539s
+Policy Improvement: 35.331s
+k = 3
+Policy Evaluation: 1.520s
+Policy Improvement: 35.991s
+Policy iteration terminated in 3 iters and 111.531s.
+Epoch 1 time: 286.274s
+#################### EPOCH 2 #########################
+Exploring environment...
+Exploration time: 1310.833s
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 2.058s
+Policy Improvement: 65.890s
+k = 2
+Policy Evaluation: 1.796s
+Policy Improvement: 65.687s
+k = 3
+Policy Evaluation: 1.869s
+Policy Improvement: 65.962s
+k = 4
+Policy Evaluation: 2.019s
+Policy Improvement: 65.798s
+Policy iteration terminated in 4 iters and 271.081s.
+Epoch 2 time: 1581.914s
+#################### EPOCH 3 #########################
+Exploring environment...
+Exploration time: 1272.311s
+Average reward: 126.956
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.153s
+Policy Improvement: 84.053s
+k = 2
+Policy Evaluation: 1.308s
+Policy Improvement: 86.032s
+k = 3
+Policy Evaluation: 1.877s
+Policy Improvement: 84.005s
+Policy iteration terminated in 3 iters and 258.429s.
+Epoch 3 time: 1530.740s
+#################### EPOCH 4 #########################
+Exploring environment...
+Exploration time: 1779.373s
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.402s
+Policy Improvement: 113.482s
+k = 2
+Policy Evaluation: 1.648s
+Policy Improvement: 113.738s
+k = 3
+Policy Evaluation: 1.758s
+Policy Improvement: 114.323s
+Policy iteration terminated in 3 iters and 346.352s.
+Epoch 4 time: 2125.725s
+#################### EPOCH 5 #########################
+Exploring environment...
+Exploration time: 1252.209s
+Average reward: 156.231
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.812s
+Policy Improvement: 127.574s
+k = 2
+Policy Evaluation: 1.765s
+Policy Improvement: 127.323s
+k = 3
+Policy Evaluation: 1.959s
+Policy Improvement: 127.388s
+k = 4
+Policy Evaluation: 1.567s
+Policy Improvement: 126.674s
+Policy iteration terminated in 4 iters and 516.065s.
+Epoch 5 time: 1768.274s
+#################### EPOCH 6 #########################
+Exploring environment...
+Exploration time: 1561.016s
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.815s
+Policy Improvement: 144.398s
+k = 2
+Policy Evaluation: 1.606s
+Policy Improvement: 144.727s
+k = 3
+Policy Evaluation: 1.803s
+Policy Improvement: 145.305s
+k = 4
+Policy Evaluation: 1.907s
+Policy Improvement: 144.360s
+Policy iteration terminated in 4 iters and 585.923s.
+Epoch 6 time: 2146.939s
+#################### EPOCH 7 #########################
+Exploring environment...
+Exploration time: 1558.402s
+Average reward: 213.865
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.587s
+Policy Improvement: 198.864s
+k = 2
+Policy Evaluation: 1.184s
+Policy Improvement: 198.371s
+k = 3
+Policy Evaluation: 1.171s
+Policy Improvement: 198.057s
+Policy iteration terminated in 3 iters and 599.236s.
+Epoch 7 time: 2157.638s
+#################### EPOCH 8 #########################
+Exploring environment...
+Exploration time: 1182.824s
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.370s
+Policy Improvement: 203.298s
+k = 2
+Policy Evaluation: 1.218s
+Policy Improvement: 202.211s
+k = 3
+Policy Evaluation: 1.205s
+Policy Improvement: 203.176s
+Policy iteration terminated in 3 iters and 612.479s.
+Epoch 8 time: 1795.303s
+#################### EPOCH 9 #########################
+Exploring environment...
+Exploration time: 1577.427s
+Average reward: 170.09
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.245s
+Policy Improvement: 172.424s
+k = 2
+Policy Evaluation: 1.793s
+Policy Improvement: 172.823s
+k = 3
+Policy Evaluation: 1.871s
+Policy Improvement: 172.055s
+Policy iteration terminated in 3 iters and 522.211s.
+Epoch 9 time: 2099.638s
+#################### EPOCH 10 #########################
+Exploring environment...
+Exploration time: 1592.875s
+Beginning policy iteration...
+k = 1
+Policy Evaluation: 1.643s
+Policy Improvement: 172.513s
+k = 2
+Policy Evaluation: 1.368s
+Policy Improvement: 172.515s
+k = 3
+Policy Evaluation: 1.272s
+Policy Improvement: 172.487s
+Policy iteration terminated in 3 iters and 521.799s.
+Epoch 10 time: 2114.674s
+Training finished in 17607.119s
+Average reward: 198.68

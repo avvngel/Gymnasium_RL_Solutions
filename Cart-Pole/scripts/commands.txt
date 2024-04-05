@@ -1,0 +1,5 @@
+python ../src/main.py --N 2 --n_epochs 10 --epsilon .1 --gamma .8 > results_N_2_10_epochs_.1_epsilon_99_gamma.txt
+python ../src/main.py --N 4 --n_epochs 10 --epsilon .1 --gamma .8 > results_N_4_10_epochs_.1_epsilon_99_gamma.txt
+python ../src/main.py --N 6 --n_epochs 10 --epsilon .1 --gamma .8 > results_N_6_10_epochs_.1_epsilon_99_gamma.txt
+python ../src/main.py --N 8 --n_epochs 10 --epsilon .1 --gamma .8 > results_N_8_10_epochs_.1_epsilon_99_gamma.txt
+python ../src/main.py --N 10 --n_epochs 10 --epsilon .1 --gamma .8 > results_N_10_10_epochs_.1_epsilon_99_gamma.txt

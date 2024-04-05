@@ -18,18 +18,29 @@ class GridWorldEnv():
         left = 2
         right = 3
         self.n = n
-        self.grid = [i for i in range(1, n**2 - 1)]
+        self.states = list(range(n**2))
+        self.grid = self.states[1:n**2 - 1]
+        self.terminal_states = [self.states[0], self.states[-1]]
         self.action_space = {up, down, left, right}
         self.state = None
         self.standard_reactions = {up: -n,
                                    down: n,
                                    left: -1,
                                    right: 1}
-        self.terminal_states = [0, n**2 - 1]
+        self.action_reprs  = {
+                              up : '↑',
+                              down : '↓',
+                              left : '←',
+                              right : '→'
+                             }
+
         self.reward = -1
+        self.left_col = [i for i in self.states if i%n == 0]
+        self.right_col = [i - 1 for i in self.left_col]
+        self.top_row = [i for i in range(1, n)]
+        self.bottom_row = [i for i in range(n*(n - 1), n**2 - 1)]
         self.terminated = None
         self.transitions = self.initialize_transitions()
-        self.states = self.grid + self.terminal_states
 
     def reset(self):
         """
@@ -66,7 +77,7 @@ class GridWorldEnv():
         for action in self.action_space:
             reaction = self.standard_reactions[action]
             next_state = state + reaction
-            if self.is_on_grid(next_state):
+            if next_state in self.orth_adj_states(state):
                 available_actions.append(action)
         return available_actions
 
@@ -74,39 +85,51 @@ class GridWorldEnv():
         prob = 1
         transitions = []
         for state in self.grid:
-            available_actions = self.get_available_actions(state)
-            for action in available_actions:
+            for action in list(self.action_space):
                 reaction = self.standard_reactions[action]
                 next_state = state + reaction
                 if next_state in self.terminal_states:
                     reward = 0
                 else:
                     reward = -1
+                if next_state not in self.orth_adj_states(state):
+                    next_state = state
                 transitions.append([state, action, next_state, prob, reward])
+                print("------------------------")
+                print(f"State {state}")
+                print(f"Action: {self.action_reprs[action]}")
+                print(f"Next_State: {next_state}")
+                print(f"Probability: {prob}")
+                print(f"Reward: {reward}")
         return transitions
 
-    def get_orth_adj_nodes(self, state):
+    def orth_adj_states(self, state):
         """
         Returns a list of orthogonally adjacent states.
         """
-        orth_adj_nodes = []
-        # Check if node to the right is on the grid
-        if self.is_on_grid(state + 1):
-            adj_nodes.append(state + 1)
-        # Check if node to the left is on the grid
-        if self.is_on_grid(state - 1):
-            adj_nodes.append(state - 1)
-        # Check if node above is on the grid
-        if self.is_on_grid(state + self.n):
-            adj_nodes.append(state + self.n)
-        # Check if node below is on the grid
-        if self.is_on_grid(state - self.n):
-            adj_nodes.append(state - self.n)
+        state_above = state - self.n
+        state_below = state + self.n
+        state_left = state - 1
+        state_right = state + 1
+        neighbors = {state_above,
+                     state_below,
+                     state_left,
+                     state_right}
+        # Check for edge cases
+        if state in self.left_col:
+            next_states = neighbors - {state_left}
+        elif state in self.right_col:
+            next_states = neighbors - {state_right}
+        elif state in self.top_row:
+            next_states = neighbors - {state_above}
+        elif state in self.bottom_row:
+            next_states = neighbors - {state_below}
+        else:
+            # Default case
+            next_states = neighbors
 
-        return orth_adj_nodes
-
+        return [i for i in next_states if self.is_on_grid(i)]
 
     def is_on_grid(self, state):
         return state in set(self.grid) | set(self.terminal_states)
-
 
