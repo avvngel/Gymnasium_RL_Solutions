@@ -3,6 +3,7 @@
 from scipy.sparse import dok_matrix
 import numpy as np
 import torch
+import time
 from log_controller import *
 
 logger = Logger()
@@ -118,4 +119,61 @@ def select_action(env_model, model_state, policy, epsilon = 0):
     action = env_model.encoder.decode_action(encoded_action)
 
     return action
+
+
+def explore(env, env_child, pi, epsilon, discretized_state_vars, n_episodes, max_time_steps, result_queue):
+
+    # Empty list to store transition update info
+    params = []
+
+    # Pre-allocate array for storing rewards and computing episodic average
+    episode_rewards = np.zeros(n_episodes)
+
+    # Exploration loop
+    episode_rewards = np.zeros(n_episodes)
+
+    for episode in range(n_episodes):
+
+        logger('')
+        logger('')
+        logger(f"#************************* EPISODE {episode + 1} ******************************#")
+
+        # Reset environment to initial state
+        env_state = env.reset()[0]
+
+        for t in range(max_time_steps):
+
+            # Convert continuous environment state into discrete model state
+            model_state = get_discretized_state(env_state, discretized_state_vars)
+
+            # Select action based on policy
+            action = select_action(env_child, model_state, pi, epsilon = epsilon)
+
+            # Execute action and record environment reaction
+            env_state, reward, terminated, truncated, info = env.step(action)
+
+            # Convert continuous next environment state in to discrete next model state
+            next_model_state = get_discretized_state(env_state, discretized_state_vars)
+
+            # Debugging output
+            logger(f"Discretized State: {env_child.encoder.encode_state(model_state)}")
+            logger(f"Action taken: {action}")
+            logger(f"Discretized Next State: {env_child.encoder.encode_state(next_model_state)}")
+
+            # Check for episode termination or truncation
+            if truncated or terminated:
+
+                reward = -2
+                params.append([model_state, action, next_model_state, reward])
+                break
+
+            # record_rewards
+            episode_rewards[episode] += 1
+
+            # Update transition probabilities and expected rewards
+            params.append((model_state, action, next_model_state, reward))
+
+    result_queue.put(params)
+    print(f"Average reward: {episode_rewards.mean()}")
+
 

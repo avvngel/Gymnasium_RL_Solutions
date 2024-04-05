@@ -4,6 +4,7 @@ from utils import Encoder, dok_to_sparse_tensor
 from scipy.sparse import lil_matrix, dok_matrix 
 import torch
 from log_controller import *
+import line_profiler
 
 
 class EnvModel():
@@ -56,6 +57,7 @@ class EnvModel():
 
         return dynamic_transitions
 
+    @profile
     def update_transitions(self, params, verbosity = 0):
 
         # Set method verbosity
@@ -67,6 +69,7 @@ class EnvModel():
         self.cached_rewards = {}
 
         for state, action, next_state, reward in params:
+
             # Get transition indices
             state_idx = self.encoder.encode_state(state)
             action_idx = self.encoder.encode_action(action)
@@ -119,6 +122,9 @@ class EnvModel():
             dok = self.dynamic_transitions['rewards'][encoded_state]
             self.cached_rewards[encoded_state] = dok_to_sparse_tensor(dok)
         return self.cached_rewards[encoded_state]
+
+    def child(self):
+        return EnvChild(self.encoder, self.actions)
 
 class EnvChild(EnvModel):
     
