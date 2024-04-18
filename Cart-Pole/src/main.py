@@ -11,8 +11,27 @@ import time
 import argparse
 import multiprocessing as mp
 from log_controller import *
+import os
+import torch
+import random
+import pdb
 
 if __name__ == "__main__":
+
+    # Set global seed
+    #seed = 41
+    seed = None
+
+    def seed_everything(seed):
+        random.seed(seed)
+        np.random.seed(seed)
+        os.environ['PYTHONHASHSEED'] = str(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+
+    #seed_everything(seed)
+
     # Accept command line arguments
     parser = argparse.ArgumentParser(prog='CartPole', 
                                     description='Process some integers.')
@@ -24,24 +43,30 @@ if __name__ == "__main__":
                         help='If set to 1, will render a pyGame demsonstration')
     parser.add_argument('--epsilon', type=float, default=0,
                         help='If >0, uses as the epsilon for epsilon greedy exploration')
+    parser.add_argument('--min_epsilon', type=float, default=0,
+                        help='Sets minimum value for epsilon for decaying epsilon-greedy exploration')
     parser.add_argument('--gamma', type=float, default=.8,
                         help='Sets discount factor for reward calculation in policy evaluation')
     parser.add_argument('--epsilon_decay_rate', type=float, default=.02,
                         help='Sets the decay rate per epoch of epsilon used in epsilon-greedy exploration.')
     parser.add_argument('--n_cores', type=int, default=1,
                         help='Number of course for distributed inference parallel exploration.')
+    parser.add_argument('--v', type=int, default=1,
+                        help='Set verbosity for output.')
 
+    # Parse command line arguments
     args = parser.parse_args()
 
     # Create a logger for controlling output verbosity
     logger = Logger()
-    logger.set_verbosity(1)
+    logger.set_verbosity(args.v)
 
     ###################### Set up environment ######################
 
     # Create gym environment
     env = gym.make('CartPole-v1')#, render_mode = 'human')
 
+    # Print checkpoint message and start discretization timer
     logger("Discretizing environment...", msg_verbosity = 1, end = '')
     tic = time.time()
 
@@ -97,31 +122,38 @@ if __name__ == "__main__":
         # 1: Push cart to the right
         return [0, 1]
 
+    # Print Checkpoint message and start initialization timer
     logger("Initializing EnvModel...", msg_verbosity = 1, end = '')
     tic = time.time()
 
     # Create discretized environment model
     env_model = EnvModel(discretized_states, available_actions)
 
+    print(f"ACTION: 0, ENCODING: {env_model.encoder.encode_action(0)}, DECODING: {env_model.encoder.decode_action(0)}")
+    print(f"ACTION: 1, ENCODING: {env_model.encoder.encode_action(1)}, DECODING: {env_model.encoder.decode_action(1)}")
+ 
+    # Log initialization time
     toc = time.time()
     logger(f"{toc - tic:.3f}s", msg_verbosity = 1)
 
     # Cache number of states for later
     n_states = len(env_model.states)
 
+    # Print checkpoint message and start policy initialization timer
     logger("Initializing policy...", msg_verbosity = 1, end = '')
     tic = time.time()
 
     # Generate random policy to start
     pi = get_random_policy(env_model, dist = 'discrete', extra_param = [.5, .5])
 
+    # Log policy generation time
     toc = time.time()
     logger(f"{toc - tic:.3f}s", msg_verbosity = 1)
 
     ############################## Policy Iteration ###############################
 
     # Exploration loop params
-    n_episodes = 1000
+    n_episodes = 10000
     max_time_steps = 500
     epsilon = args.epsilon # Percentage of time to go against greedy policy
     epsilon_decay_rate = args.epsilon_decay_rate
@@ -133,7 +165,7 @@ if __name__ == "__main__":
     partition[-1] += n_episodes % n_tasks
 
     # Policy iteration loop params
-    max_Iters = 10
+    max_Iters = 1000
     n_epochs = args.n_epochs
     gamma = args.gamma
 
@@ -143,7 +175,7 @@ if __name__ == "__main__":
     logger("Beginning training loop...", msg_verbosity = 1)
     total_time_tic = time.time()
     logger("k=0")
-
+   
     # Training Loop
     for j in range(n_epochs):
 
@@ -151,7 +183,8 @@ if __name__ == "__main__":
         epoch_tic = time.time()
 
         # Decay epsilon as epochs go on
-        epsilon = max(.02, epsilon - j*epsilon_decay_rate)
+        epsilon = max(args.min_epsilon, epsilon - epsilon_decay_rate)
+        logger(f"EPSILON: {epsilon}", msg_verbosity = 1)
 
         # ********************* Explore environment **********************
         # Exploration loop
@@ -165,9 +198,9 @@ if __name__ == "__main__":
         processes = [mp.Process(target=explore, args=(env, env_model.child(), pi,
                                                       epsilon, discretized_state_vars,
                                                        partition[i], max_time_steps,
-                                                       results_queue)
+                                                       results_queue, seed)
                                 )
-             for i in range(n_tasks)]
+                     for i in range(n_tasks)]
 
         # Run all processes
         for p in processes:
@@ -178,24 +211,29 @@ if __name__ == "__main__":
         while results_received < n_tasks:
 
             result = results_queue.get()
+            #logger(f"Finished Gymnasium Exploration in {time.time() - exploration_tic:.3f}s", msg_verbosity = 1)
             results_received += 1
             
             # Update transition probabilities and expected rewards
             tic = time.time()
-            env_model.update_transitions(result)
+            env_model.update_transitions(result, verbosity = 0)
             toc = time.time()
             logger(f"Processed result {results_received} in {toc - tic:.3f}s", msg_verbosity = 1)
 
             # Prevent busy waiting 
         for p in processes:
             p.join()
-
+        
         exploration_toc = time.time()
         logger(f"Exploration time: {exploration_toc - exploration_tic:.3f}s", msg_verbosity = 1)
 
         # *********************** Policy Iteration ***********************
         logger("Beginning policy iteration...", msg_verbosity = 1)
         policy_iteration_tic = time.time()
+
+        # Initizlize state-value function to 0
+        logger("RESETTING V_k...", msg_verbosity=1)
+        V_k = torch.zeros((n_states, 1))
 
         for i in range(max_Iters):
             
@@ -223,14 +261,21 @@ if __name__ == "__main__":
             old_pi = pi.clone()
 
             # Get policy that's greedy to V_k
-            pi = improve_policy(pi, env_model, V_k, gamma = .99)
+            pi = improve_policy(pi, env_model, V_k, gamma = .99, verbosity = 0)
             improve_policy_toc = time.time()
 
             # Display execution time
             logger(f"{improve_policy_toc - improve_policy_tic:.3f}s", msg_verbosity = 1)
 
+            # Display non-zero policy entries
+            logger("------------- Policy -------------", msg_verbosity = 2)
+            non_zero_indices = pi.nonzero()
+            logger(non_zero_indices, msg_verbosity = 2)
+            logger(pi[non_zero_indices[:,0], :], msg_verbosity = 2)
+            logger(env_model.encoder.action_encoding, msg_verbosity = 2)
+
             # Exit criterion
-            if torch.all(torch.isclose(old_pi, pi, rtol = 1e-7, atol = 1e-9)):
+            if torch.all(torch.isclose(old_pi, pi, rtol = 1e-7, atol = 1e-7)):
                 policy_iteration_toc = time.time()
                 logger(f"Policy iteration terminated in {i+1} iters and {policy_iteration_toc - policy_iteration_tic:.3f}s.", msg_verbosity = 1)
                 break
@@ -241,14 +286,14 @@ if __name__ == "__main__":
     logger(f"Training finished in {total_time_toc - total_time_tic:.3f}s", msg_verbosity = 1)
 
     # Save new policy
-    policy_name = f"CartPole_policy_N_{N}_{n_epochs}_epochs_{args.epsilon}_epsilon_{args.gamma}_gamma_{args.epsilon_decay_rate}_decay_rate.pt"
+    policy_name = f"CartPole_policy_N_{N}_{n_epochs}_epochs_{args.epsilon}_epsilon_{args.gamma}_gamma_{args.epsilon_decay_rate}_decay_rate_seed_{seed}.pt"
     torch.save(pi, policy_name)
 
     # Display non-zero policy entries
-    logger("------------- Policy -------------")
-    non_zero_indices = pi.nonzero()
-    logger(pi[non_zero_indices[:,0], :])
-    logger(env_model.encoder.action_encoding)
+    #logger("------------- Policy -------------")
+    #non_zero_indices = pi.nonzero()
+    #logger(pi[non_zero_indices[:,0], :])
+    #logger(env_model.encoder.action_encoding)
 
     ######################## Launch Policy Demonstration ###########################
 
@@ -272,7 +317,10 @@ if __name__ == "__main__":
     for episode in range(n_episodes):
 
         # Reset environment to initial state
-        env_state = env.reset()[0]
+        if seed == None:
+            env_state = env.reset()[0]
+        else:
+            env_state = env.reset(seed=seed)[0]
         
         if args.demonstrate:
             # Render Pygame animation
@@ -294,18 +342,15 @@ if __name__ == "__main__":
 
             # Record reward
             reward_tally[episode] += reward
+            
+            if args.demonstrate:
 
-            # Sleep to smoothen out animation
-            time.sleep(1/fps)
+                # Sleep to smoothen out animation
+                time.sleep(1/fps)
             
             # Check exit criterion
             if truncated or terminated:
-
-                reward = 0
-                env_model.update_transitions([[model_state, action, next_model_state, reward]])
                 break
-            
-            env_model.update_transitions([[model_state, action, next_model_state, reward]])
 
     print(f"Average reward: {reward_tally.mean()}")
 

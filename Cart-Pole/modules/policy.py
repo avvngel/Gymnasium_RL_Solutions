@@ -10,6 +10,14 @@ import time
 from log_controller import *
 import argparse
 
+import warnings
+from numba.core.errors import NumbaTypeSafetyWarning, NumbaPendingDeprecationWarning
+
+# Suppress specific Numba warnings about unsafe casts
+warnings.filterwarnings('ignore', category=NumbaTypeSafetyWarning)
+warnings.filterwarnings('ignore', category=NumbaPendingDeprecationWarning)
+
+
 # Instantiate Logger to control output verbosity
 logger = Logger()
 logger.set_verbosity(0)
@@ -18,7 +26,7 @@ def iterative_evaluation(V_k: torch.Tensor,
                           pi: torch.Tensor,
                           env_model: EnvModel,
                           gamma = .99,
-                          tol = 1e-6,
+                          tol = 1e-7,
                           debug_mode = False):
 
     """
@@ -54,42 +62,46 @@ def improve_policy(pi, env_model, V_k, gamma = .99, debug_mode = False, verbosit
     for state_idx in env_model.encoded_states:
     
         # Get transition probabilities and rewards:
-        prob_dist = env_model.get_probability_tensor(state_idx)
-        rewards = env_model.get_rewards_tensor(state_idx)
-        
-        if verbosity == 2:
-            non_zero_indices = prob_dist.to_dense().nonzero()
-            prob_dist_nonzero = prob_dist.to_dense()[non_zero_indices[:, 0], non_zero_indices[:, 1]]
-            if prob_dist_nonzero.shape[0] != 0:
-                logger('------- prob_dist_nonzero -------')
-                logger(prob_dist_nonzero)
-        
-            non_zero_indices = rewards.to_dense().nonzero()
-            rewards_nonzero = rewards.to_dense()[non_zero_indices[:, 0], non_zero_indices[:, 1]]
-            if rewards_nonzero.shape[0] != 0:
-                logger('-------- rewards_nonzero -------')
-                logger(rewards_nonzero)
+        prob_dist, rewards = env_model.get_prob_and_reward_tensors(state_idx)
+
+        if prob_dist.sum() == 0:
+            best_action = 0
+
+        else:
             
-        # Element-wise multiplication of transition probabilities and rewards
-        prob_reward_product = prob_dist * rewards
+            if verbosity == 2:
+                non_zero_indices = prob_dist.to_dense().nonzero()
+                prob_dist_nonzero = prob_dist.to_dense()[non_zero_indices[:, 0], non_zero_indices[:, 1]]
+                if prob_dist_nonzero.shape[0] != 0:
+                    logger('------- prob_dist_nonzero -------')
+                    logger(prob_dist)
+            
+                non_zero_indices = rewards.to_dense().nonzero()
+                rewards_nonzero = rewards.to_dense()[non_zero_indices[:, 0], non_zero_indices[:, 1]]
+                if rewards_nonzero.shape[0] != 0:
+                    logger('-------- rewards_nonzero -------')
+                    logger(rewards)
+                
+            # Element-wise multiplication of transition probabilities and rewards
+            prob_reward_product = prob_dist * rewards
 
-        # Take row sum to sum across next_states
-        prob_reward_sumproduct = prob_reward_product.sum(dim = 1).unsqueeze(dim = 1)
+            # Take row sum to sum across next_states
+            prob_reward_sumproduct = prob_reward_product.sum(dim = 1).unsqueeze(dim = 1)
 
-        # Product of transition probabitlities and discounted next_state values
-        gamma_P_V = gamma*torch.matmul(prob_dist, V_k)
-    
-        # Compute Q-values
-        Q_values = gamma_P_V + prob_reward_sumproduct
+            # Product of transition probabitlities and discounted next_state values
+            gamma_P_V = gamma*torch.matmul(prob_dist, V_k)
+        
+            # Compute Q-values
+            Q_values = gamma_P_V + prob_reward_sumproduct
 
-        # Select action that maximizes reward if policy pi is followed after
-        best_action = torch.argmax(Q_values)
+            # Select action that maximizes reward if policy pi is followed after
+            best_action = torch.argmax(Q_values)
 
         # Update policy to be greedy w.r.t the current value function
         pi[state_idx, :] = torch.zeros(env_model.max_action_dim)
         pi[state_idx, best_action] = 1
 
-        if verbosity == 2:
+        if verbosity == 2 and prob_dist.sum() != 0:
             non_zero_indices = prob_dist.to_dense().nonzero()
             prob_dist_nonzero = prob_dist.to_dense()[non_zero_indices[:, 0], non_zero_indices[:, 1]]
             if prob_dist_nonzero.shape[0] != 0:
@@ -132,11 +144,11 @@ def improve_policy(pi, env_model, V_k, gamma = .99, debug_mode = False, verbosit
                 logger(Q_values[non_zero_indices[:, 0], non_zero_indices[:, 1]])
                 logger('----------- pi row -----------')
                 logger(pi[state_idx, :])
-                time.sleep(.5)
+                #time.sleep(.5)
 
-    if verbosity == 2:
-        print("NON_ZERO_Q:")
-        print(non_zero_Q)
+            if verbosity == 2:
+                print("NON_ZERO_Q:")
+                print(non_zero_Q)
 
     logger.set_verbosity(old_verbosity)
     return pi
@@ -156,25 +168,30 @@ def form_R_pi_and_P_pi(pi, env_model):
     for state in env_model.encoded_states:
         n_actions = env_model.max_action_dim
         pi_row_vec = pi[state].unsqueeze(0)
-        prob_dist = env_model.get_probability_tensor(state)
-        exp_rewards = env_model.get_rewards_tensor(state)
-        
-        # Element-wise multiplication of probabilities and rewards
-        prob_reward_product = prob_dist * exp_rewards
-        
-        # Sum over actions for expected rewards
-        expected_rewards = torch.matmul(pi_row_vec, prob_reward_product).sum(dim = 1)
-        R_pi[state] = expected_rewards
+        prob_dist, exp_rewards = env_model.get_prob_and_reward_tensors(state)
 
-        # Compute each row of P_pi
-        P_pi_row = torch.matmul(pi_row_vec, prob_dist).squeeze()
+        if prob_dist.sum() == 0:
 
-        # Adjust row indices and store COO information
-        non_zero_indices = P_pi_row.nonzero(as_tuple = True)[0].tolist()
-        adjusted_row_indices = [state]*len(non_zero_indices)
-        P_pi_row_indices.extend(adjusted_row_indices)
-        P_pi_col_indices.extend(non_zero_indices)
-        P_pi_values.extend(P_pi_row[non_zero_indices].tolist())
+            R_pi[state] = 0
+
+        else:
+
+            # Element-wise multiplication of probabilities and rewards
+            prob_reward_product = prob_dist * exp_rewards
+            
+            # Sum over actions for expected rewards
+            expected_rewards = torch.matmul(pi_row_vec, prob_reward_product).sum(dim = 1)
+            R_pi[state] = expected_rewards
+
+            # Compute each row of P_pi
+            P_pi_row = torch.matmul(pi_row_vec, prob_dist).squeeze()
+
+            # Adjust row indices and store COO information
+            non_zero_indices = P_pi_row.nonzero(as_tuple = True)[0].tolist()
+            adjusted_row_indices = [state]*len(non_zero_indices)
+            P_pi_row_indices.extend(adjusted_row_indices)
+            P_pi_col_indices.extend(non_zero_indices)
+            P_pi_values.extend(P_pi_row[non_zero_indices].tolist())
         
          
     # Combine P_pi_rows into one sparse_coo_tensor

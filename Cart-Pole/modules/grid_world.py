@@ -50,6 +50,8 @@ class GridWorldEnv():
         self.state = np.random.choice(self.grid)
         self.terminated = False
 
+        return self.state
+
     def step(self, action):
         """
         Computes environments reaction to a given action and returns
@@ -59,12 +61,16 @@ class GridWorldEnv():
         reward = -1
         reaction = self.standard_reactions[action]
         next_state = self.state + reaction
-        if self.is_on_grid(next_state):
+        if next_state in self.orth_adj_states(self.state):
             self.state = next_state
         if self.state in self.terminal_states:
             reward = 0
             self.terminated = True
-        return self.state, self.terminated, reward
+        # No implementation
+        truncated = None
+        info = None
+
+        return self.state, reward, self.terminated, truncated, info
         
     def get_action_space(self):
         """
@@ -73,13 +79,14 @@ class GridWorldEnv():
         return list(self.action_space)
 
     def get_available_actions(self, state):
-        available_actions = []
-        for action in self.action_space:
-            reaction = self.standard_reactions[action]
-            next_state = state + reaction
-            if next_state in self.orth_adj_states(state):
-                available_actions.append(action)
-        return available_actions
+        #available_actions = []
+        #for action in self.action_space:
+        #    reaction = self.standard_reactions[action]
+        #    next_state = state + reaction
+        #    if next_state in self.orth_adj_states(state):
+        #        available_actions.append(action)
+        #return available_actions
+        return [0, 1, 2, 3]
 
     def initialize_transitions(self):
         prob = 1

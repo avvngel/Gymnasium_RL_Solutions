@@ -84,14 +84,14 @@ pi = torch.load(args.policy)
 
 # Loop params
 n_episodes = 1000
-max_time_steps = 500
+max_time_steps = 1000
 fps = 30 # render frames per second
 
 for episode in range(n_episodes):
     logger('')
     logger('')
     logger(f"#************************* EPISODE {episode + 1} ******************************#")
-    env_state = env.reset()[0]
+    env_state = env.reset(seed=42)[0]
     env.render()
     for t in range(max_time_steps):
         model_state = get_discretized_state(env_state, discretized_state_vars)
@@ -104,11 +104,9 @@ for episode in range(n_episodes):
 
         
 
-#        time.sleep(1/fps)
+        time.sleep(1/fps)
         if truncated or terminated:
             reward = 0
-            env_model.update_transitions([[model_state, action, next_model_state, reward]])
- #           time.sleep(1/fps)
+            time.sleep(1/fps)
             break
 
-        env_model.update_transitions([[model_state, action, next_model_state, reward]])

@@ -11,8 +11,26 @@ import time
 import argparse
 import multiprocessing as mp
 from log_controller import *
+import os
+import torch
+import random
+import pdb
 
 if __name__ == "__main__":
+
+    # Set global seed
+    seed = 42
+
+    def seed_everything(seed):
+        random.seed(seed)
+        np.random.seed(seed)
+        os.environ['PYTHONHASHSEED'] = str(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+
+    #seed_everything(seed)
+
     # Accept command line arguments
     parser = argparse.ArgumentParser(prog='CartPole', 
                                     description='Process some integers.')
@@ -30,18 +48,22 @@ if __name__ == "__main__":
                         help='Sets the decay rate per epoch of epsilon used in epsilon-greedy exploration.')
     parser.add_argument('--n_cores', type=int, default=1,
                         help='Number of course for distributed inference parallel exploration.')
+    parser.add_argument('--v', type=int, default=1,
+                        help='Set verbosity for output.')
 
+    # Parse command line arguments
     args = parser.parse_args()
 
     # Create a logger for controlling output verbosity
     logger = Logger()
-    logger.set_verbosity(1)
+    logger.set_verbosity(args.v)
 
     ###################### Set up environment ######################
 
     # Create gym environment
     env = gym.make('CartPole-v1')#, render_mode = 'human')
 
+    # Print checkpoint message and start discretization timer
     logger("Discretizing environment...", msg_verbosity = 1, end = '')
     tic = time.time()
 
@@ -97,43 +119,48 @@ if __name__ == "__main__":
         # 1: Push cart to the right
         return [0, 1]
 
+    # Print Checkpoint message and start initialization timer
     logger("Initializing EnvModel...", msg_verbosity = 1, end = '')
     tic = time.time()
 
     # Create discretized environment model
     env_model = EnvModel(discretized_states, available_actions)
-
+ 
+    # Log initialization time
     toc = time.time()
     logger(f"{toc - tic:.3f}s", msg_verbosity = 1)
 
     # Cache number of states for later
     n_states = len(env_model.states)
 
+    # Print checkpoint message and start policy initialization timer
     logger("Initializing policy...", msg_verbosity = 1, end = '')
     tic = time.time()
 
     # Generate random policy to start
     pi = get_random_policy(env_model, dist = 'discrete', extra_param = [.5, .5])
 
+    # Log policy generation time
     toc = time.time()
     logger(f"{toc - tic:.3f}s", msg_verbosity = 1)
 
     ############################## Policy Iteration ###############################
 
     # Exploration loop params
-    n_episodes = 1000
+    env_child = env_model.child()
+    n_episodes = 10000
     max_time_steps = 500
     epsilon = args.epsilon # Percentage of time to go against greedy policy
     epsilon_decay_rate = args.epsilon_decay_rate
     fps = 30 # render frames per second
-    n_tasks = args.n_cores
-    partition = [int(n_episodes / n_tasks)] * n_tasks
+    #n_tasks = args.n_cores
+    #partition = [int(n_episodes / n_tasks)] * n_tasks
 
     # Distribute any remaining episodes to the last parition
-    partition[-1] += n_episodes % n_tasks
+    #partition[-1] += n_episodes % n_tasks
 
     # Policy iteration loop params
-    max_Iters = 10
+    max_Iters = 1000
     n_epochs = args.n_epochs
     gamma = args.gamma
 
@@ -143,7 +170,7 @@ if __name__ == "__main__":
     logger("Beginning training loop...", msg_verbosity = 1)
     total_time_tic = time.time()
     logger("k=0")
-
+   
     # Training Loop
     for j in range(n_epochs):
 
@@ -157,41 +184,100 @@ if __name__ == "__main__":
         # Exploration loop
         logger("Exploring environment...", msg_verbosity = 1)
         exploration_tic = time.time()
+
+        # Empty list to store transition update info
+        params = []
+
+        # Pre-allocate array for storing rewards and computing episodic average
+        episode_rewards = np.zeros(n_episodes)
+        #pdb.set_trace()
+        # Exploration loop
+        for episode in range(n_episodes):
+
+            logger('')
+            logger('')
+            logger(f"#************************* EPISODE {episode + 1} ******************************#")
+
+            # Reset environment to initial state
+            if seed == None:
+                env_state = env.reset()[0]
+            else:
+                env_state = env.reset(seed = seed)[0]
+
+            for t in range(max_time_steps):
+
+                # Convert continuous environment state into discrete model state
+                model_state = get_discretized_state(env_state, discretized_state_vars)
+
+                # Select action based on policy
+                action = select_action(env_child, model_state, pi, epsilon = epsilon)
+
+                # Execute action and record environment reaction
+                env_state, reward, terminated, truncated, info = env.step(action)
+
+                # Convert continuous next environment state in to discrete next model state
+                next_model_state = get_discretized_state(env_state, discretized_state_vars)
+
+                # Debugging output
+                logger(f"Discretized State: {env_child.encoder.encode_state(model_state)}")
+                logger(f"Action taken: {action}")
+                logger(f"Discretized Next State: {env_child.encoder.encode_state(next_model_state)}")
+
+                # Check for episode termination or truncation
+                if truncated or terminated:
+
+                    reward = -2
+                    params.append((model_state, action, next_model_state, reward))
+                    break
+
+                # record_rewards
+                episode_rewards[episode] += 1
+
+                # Update transition probabilities and expected rewards
+                params.append((model_state, action, next_model_state, reward))
+
+        #result_queue.put(params)
+        print(f"Average reward: {episode_rewards.mean()}")
         
         # Instantiate Queue to receive exploration results
-        results_queue = mp.Queue()
+        #results_queue = mp.Queue()
 
         # Instantiate all processes
-        processes = [mp.Process(target=explore, args=(env, env_model.child(), pi,
-                                                      epsilon, discretized_state_vars,
-                                                       partition[i], max_time_steps,
-                                                       results_queue)
-                                )
-             for i in range(n_tasks)]
+        #processes = [mp.Process(target=explore, args=(env, env_model.child(), pi,
+        #                                              epsilon, discretized_state_vars,
+        #                                               partition[i], max_time_steps,
+        #                                               results_queue, seed)
+        #                        )
+        #             for i in range(n_tasks)]
 
         # Run all processes
-        for p in processes:
-            p.start()
+        #for p in processes:
+        #    p.start()
 
-        results_received = 0
+        #results_received = 0
 
-        while results_received < n_tasks:
+        #while results_received < n_tasks:
 
-            result = results_queue.get()
-            results_received += 1
+        #    result = results_queue.get()
+            #logger(f"Finished Gymnasium Exploration in {time.time() - exploration_tic:.3f}s", msg_verbosity = 1)
+        #    results_received += 1
             
             # Update transition probabilities and expected rewards
-            tic = time.time()
-            env_model.update_transitions(result)
-            toc = time.time()
-            logger(f"Processed result {results_received} in {toc - tic:.3f}s", msg_verbosity = 1)
+        #    tic = time.time()
+        #    env_model.update_transitions(result, verbosity = 0)
+        #    toc = time.time()
+        #    logger(f"Processed result {results_received} in {toc - tic:.3f}s", msg_verbosity = 1)
 
             # Prevent busy waiting 
-        for p in processes:
-            p.join()
-
+        #for p in processes:
+        #    p.join()
+        #pdb.set_trace() 
         exploration_toc = time.time()
+        env_model.update_transitions(params)
         logger(f"Exploration time: {exploration_toc - exploration_tic:.3f}s", msg_verbosity = 1)
+
+        logger("Processing data...", msg_verbosity = 1)
+        exploration_toc - time.time()
 
         # *********************** Policy Iteration ***********************
         logger("Beginning policy iteration...", msg_verbosity = 1)
@@ -230,7 +316,7 @@ if __name__ == "__main__":
             logger(f"{improve_policy_toc - improve_policy_tic:.3f}s", msg_verbosity = 1)
 
             # Exit criterion
-            if torch.all(torch.isclose(old_pi, pi, rtol = 1e-7, atol = 1e-9)):
+            if torch.all(torch.isclose(old_pi, pi, rtol = 1e-12, atol = 1e-14)):
                 policy_iteration_toc = time.time()
                 logger(f"Policy iteration terminated in {i+1} iters and {policy_iteration_toc - policy_iteration_tic:.3f}s.", msg_verbosity = 1)
                 break
@@ -294,9 +380,10 @@ if __name__ == "__main__":
 
             # Record reward
             reward_tally[episode] += reward
-
-            # Sleep to smoothen out animation
-            time.sleep(1/fps)
+            
+            if args.demonstrate:
+                # Sleep to smoothen out animation
+                time.sleep(1/fps)
             
             # Check exit criterion
             if truncated or terminated:

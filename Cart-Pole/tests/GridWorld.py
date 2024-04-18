@@ -6,6 +6,12 @@ from grid_world import GridWorldEnv
 from policy import *
 from log_controller import *
 import argparse
+import faulthandler
+import numba
+
+#numba.gdb_init()
+
+faulthandler.enable()
 
 # Accept command line arguments
 parser = argparse.ArgumentParser(prog='CartPole',
