@@ -21,9 +21,9 @@ warnings.filterwarnings('ignore', category=NumbaPendingDeprecationWarning)
 class EnvModel():
 
     # Nested dictionary numba type definitions
-    inner_dict_type = types.DictType(types.uint32, types.float32[::1])
+    inner_dict_type = types.DictType(types.uint32, types.float64[::1])
     middle_dict_type = types.DictType(types.uint16, inner_dict_type)
-    inner_val_dtype = types.float32[::1]
+    inner_val_dtype = types.float64[::1]
     action_to_count_dict_type = types.DictType(types.uint16, types.uint32)
 
     def __init__(self, states, actions, transitions = None):
@@ -120,7 +120,7 @@ class EnvModel():
                 encoded_next_state = encode_state(next_state, state_encoding, state_decoding, next_id)
 
                 # Create transitinos data packet to insert as value in dictionary
-                transitions_data = np.array([probability, reward, count], np.float32)
+                transitions_data = np.array([probability, reward, count], np.float64)
 
                 # Assign probability and rewards values
                 insert_value(transitions, inner_dict_type, inner_val_dtype, encoded_state, encoded_action, encoded_next_state, transitions_data)
@@ -168,7 +168,7 @@ class EnvModel():
         self.cached_probabilities = {}
         self.cached_rewards = {}
 
-        params = [(str(state), str(action), str(next_state), np.float32(reward))
+        params = [(str(state), str(action), str(next_state), np.float64(reward))
                   for state, action, next_state, reward, in params]
 
         # 
@@ -317,7 +317,7 @@ class EnvModel():
 
         default_value = np.array([default_probability,
                                   default_exp_reward,
-                                  default_count], dtype = np.float32)
+                                  default_count], dtype = np.float64)
 
         # Check for state and action keys.
         if state not in nested_dict:

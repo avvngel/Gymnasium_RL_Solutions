@@ -9,12 +9,8 @@ import argparse
 import faulthandler
 import numba
 
-#numba.gdb_init()
-
-faulthandler.enable()
-
 # Accept command line arguments
-parser = argparse.ArgumentParser(prog='CartPole',
+parser = argparse.ArgumentParser(prog='GridWorld',
                                 description='Process some integers.')
 parser.add_argument('--n', type=int, default = 4,
                     help="Number of discretization points (default: 2)")

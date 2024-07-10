@@ -286,8 +286,8 @@ def discretize_state_variables(global_bounds, episode_bounds, N):
 
         # Set bound based for infinite termination windows
         if is_unbounded([lb, ub]):
-            lb = -10
-            ub = 10
+            lb = -5
+            ub = 5
 
         # Set global bounds
         left_bin = [[global_bounds[0, state_var_idx], round(lb, 2)]]
@@ -324,3 +324,4 @@ def display_parsed_args(args, display_width, logger, verbosity):
     logger("verbosity".ljust(left_width, ".") + str(args.v).rjust(right_width, "."), msg_verbosity = verbosity)
     logger("demonstrate".ljust(left_width, ".") + str(args.demonstrate).rjust(right_width, "."), msg_verbosity = verbosity)
     logger("-"*display_width, msg_verbosity = verbosity)
+

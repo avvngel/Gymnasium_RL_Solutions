@@ -89,19 +89,40 @@ class GridWorldEnv():
         return [0, 1, 2, 3]
 
     def initialize_transitions(self):
-        prob = 1
-        transitions = []
+
+        """
+        Returns a list of tuples describing the transitions dynamics 
+        of the environment of the form:
+
+        params = [(state, action, next_state,  prob, reward)]
+        """
+
+        prob = 1 # Deterministic transition probabilitt
+        transitions = [] # Initialize empty transitions list
+
+        # Loop over all possible state->action->next_state transitions
         for state in self.grid:
             for action in list(self.action_space):
+
+                # Get environment reaction for given action
                 reaction = self.standard_reactions[action]
+
+                # Compute next_state
                 next_state = state + reaction
+
+                # Check for terminal state
                 if next_state in self.terminal_states:
-                    reward = 0
+                    reward = 0 # Reaching a terminal state is not punished
                 else:
-                    reward = -1
+                    reward = -1 # Non-terminal transitions are punished
+
+                # Check for case where the agent runs into a wall
                 if next_state not in self.orth_adj_states(state):
-                    next_state = state
+                    next_state = state # Running into a wall does not change state
+
                 transitions.append([state, action, next_state, prob, reward])
+                
+                # Print Debugging info
                 print("------------------------")
                 print(f"State {state}")
                 print(f"Action: {self.action_reprs[action]}")

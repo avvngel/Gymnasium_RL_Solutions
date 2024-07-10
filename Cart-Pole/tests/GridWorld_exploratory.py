@@ -110,7 +110,7 @@ for _ in range(n_epochs):
 
     for i in range(max_Iters):
 
-        logger(f"k={i+1}")
+        #logger(f"k={i+1}")
 
         # Cache old policy
         old_pi = pi.clone()
@@ -121,8 +121,8 @@ for _ in range(n_epochs):
         # Improve policy based on state-value function
         pi = improve_policy(pi, env_model, V_k, gamma = .99, verbosity=0)
 
-        logger('policy:')
-        logger(pi)
+        #logger('policy:')
+        #logger(pi)
 
         if torch.all(torch.isclose(old_pi, pi, rtol = 1e-12)):
             break
