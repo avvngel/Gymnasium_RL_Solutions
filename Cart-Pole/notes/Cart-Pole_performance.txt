@@ -1,3 +1,0 @@
-Cart-Pole v2
-
-# of Discretization points         # of Training loops        # of policy iterations
